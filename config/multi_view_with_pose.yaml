@@ -1,0 +1,47 @@
+# config/multi_view_with_pose.yaml
+# Configuration for multi-view 3D-VAEGAN with pose information
+
+# Model Parameters
+n_epochs: 1000
+batch_size: 32
+g_lr: 0.0025
+e_lr: 0.0001
+d_lr: 0.001
+beta: [0.5, 0.5]
+d_thresh: 0.8
+z_size: 200
+z_dis: "norm"
+bias: false
+leak_value: 0.2
+cube_len: 32
+image_size: 224
+soft_label: true
+lrsh: true
+
+# Directory Parameters
+output_dir: "../output"
+input_dir: "../input"
+pickle_dir: "pickle"
+log_dir: "log"
+image_dir: "image"
+data_dir: "chair"
+
+# Step Parameters
+pickle_step: 100
+log_step: 1
+image_save_step: 10
+
+# Other Parameters
+alg_type: "3DVAEGAN_MULTIVIEW_POSE"
+combine_type: "mean"
+num_views: 3
+model_name: "MultiviewPose"
+mode: "train"
+use_tensorboard: true
+
+# Object category
+obj: "chair"
+
+# Pose-specific Parameters
+pose_encoder_hidden: 128
+pose_fusion_type: "concat"  # Options: concat, attention, film

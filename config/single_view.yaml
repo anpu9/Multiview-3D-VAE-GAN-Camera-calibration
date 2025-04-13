@@ -1,0 +1,41 @@
+# config/single_view.yaml
+# Configuration for single-view 3D-VAEGAN
+
+# Model Parameters
+n_epochs: 1000
+batch_size: 32
+g_lr: 0.0025
+e_lr: 0.0001
+d_lr: 0.001
+beta: [0.5, 0.5]
+d_thresh: 0.8
+z_size: 200
+z_dis: "norm"
+bias: false
+leak_value: 0.2
+cube_len: 32
+image_size: 224
+soft_label: true
+lrsh: true
+
+# Directory Parameters
+output_dir: "../output"
+input_dir: "../input"
+pickle_dir: "pickle"
+log_dir: "log"
+image_dir: "image"
+data_dir: "chair"
+
+# Step Parameters
+pickle_step: 100
+image_save_step: 10
+log_step: 1
+
+# Other Parameters
+alg_type: "3DVAEGAN"
+model_name: "SingleView"
+mode: "train"
+use_tensorboard: true
+
+# Object category
+obj: "chair"

@@ -143,11 +143,7 @@ The project implements a 3D-VAEGAN architecture with a clean, modular design bui
     - Max: Element-wise maximum across views
     - Concat: Concatenate all views (extensible but not implemented)
 
-#### Factory Pattern
-
-The architecture includes a factory function `create_encoder()` that instantiates the appropriate encoder based on configuration parameters, simplifying code that needs to select between single and multi-view encoders.
-
-For backward compatibility, the original class names (`_G`, `_D`, `_E`, `_E_MultiView`) are maintained as aliases to their refactored counterparts.
+The encoder outputs mean (μ) and log variance (log σ²) parameters that define a distribution in latent space. The reparameterization trick is used to sample from this distribution while maintaining differentiability.
 
 ## Dataset Implementation (`utils.py`)
 
@@ -205,20 +201,178 @@ The dataset implementation handles the complexity of the CO3D data structure and
    - Configure multi-view combination type with `--combine_type` (options: 'mean', 'max')
    - Set the latent space size with `--z_size` (default: 200)
 
-## Getting Started
+# 3D-VAE-GAN Training Guide
 
-1. Structure your CO3D data according to the expected format
-2. Run the voxelization script to convert point clouds to voxels
-3. Implement the training and testing functions for your desired model variant
-4. Use the main.py to train and test your model
+This repository implements a 3D Variational Autoencoder Generative Adversarial Network (3D-VAE-GAN) for generating 3D shapes from 2D images. The model can be trained in several configurations: single-view, multi-view, and with/without pose information.
 
-## Dependencies
+## Requirements
 
+- Python 3.x
+- PyTorch
 - NumPy
-- Open3D
-- tqdm
-- PyTorch (for training)
+- Matplotlib
+- PyYAML
+- (Optional) TensorFlow for TensorBoard logging
 
+## Project Structure
+
+```
+├── config/
+│   ├── default.yaml
+│   ├── single_view.yaml
+│   ├── multi_view.yaml
+│   └── multi_view_with_pose.yaml
+├── src/
+│   ├── main.py
+│   ├── train.py
+│   ├── model.py
+│   ├── utils.py
+│   └── lr_sh.py
+├── input/
+│   └── chair/  # Dataset directory
+├── output/
+│   ├── image/  # Output visualizations
+│   ├── pickle/ # Model checkpoints
+│   └── log/    # Training logs
+```
+
+## Data Preparation
+
+Place your dataset in the `input/` directory. The default configuration expects a dataset of chairs, but this can be configured. The dataset should be organized according to the requirements of the `CO3DDataset` class.
+
+### Training Modes
+
+The model supports four training modes:
+
+1. **Single-View (3DVAEGAN)**: Train using single images per object
+2. **Multi-View (3DVAEGAN_MULTIVIEW)**: Train using multiple views of each object
+3. **Single-View with Pose (3DVAEGAN_POSE)**: Incorporate pose information with single views
+4. **Multi-View with Pose (3DVAEGAN_MULTIVIEW_POSE)**: Incorporate pose information with multiple views
+
+## Training the Model
+
+## Configuration Files
+
+Configuration files are stored in the `config/` directory. Several example configurations are provided:
+
+- `config/default.yaml`: Default configuration used when no config file is specified
+- `config/single_view.yaml`: Configuration for single-view 3D-VAEGAN
+- `config/multi_view.yaml`: Configuration for multi-view 3D-VAEGAN
+- `config/multi_view_with_pose.yaml`: Configuration for multi-view 3D-VAEGAN with pose information
+
+## Using Configuration Files
+
+You can use a configuration file by specifying the `--config` parameter:
+
+```bash
+python main.py --config config/multi_view.yaml
+```
+
+You can also override specific parameters from the command line:
+
+```bash
+python main.py --config config/multi_view.yaml --batch_size 64 --obj table
+```
+
+If no configuration file is specified, the system will try to use `config/default.yaml`.
+
+## Configuration Parameters
+
+All parameters available in the configuration files. Some key parameters include:
+
+### Model Parameters
+- `alg_type`: Algorithm type (`3DVAEGAN`, `3DVAEGAN_MULTIVIEW`, etc.)
+- `batch_size`: Number of samples per batch
+- `z_size`: Latent space dimension
+- `cube_len`: Voxel grid resolution
+
+### Multi-view Parameters
+- `num_views`: Number of views per object
+- `combine_type`: Method for combining views (`mean`, `max`)
+
+### Environment-Specific Configurations
+
+You can use different configurations for different environments:
+
+```yaml
+# config/dev.yaml
+output_dir: "../output_dev"
+batch_size: 8
+n_epochs: 5
+
+# config/prod.yaml
+output_dir: "/data/output"
+batch_size: 32
+n_epochs: 1000
+```
+
+## Monitoring Training
+
+During training, the following metrics are printed after each epoch:
+
+- `D_loss`: Total discriminator loss (comprised of real and fake components)
+ - `D_R`: Loss on real samples
+ - `D_F`: Loss on fake samples
+- `G_loss`: Total generator loss
+ - `Recon`: Reconstruction loss for the generator path
+- `E_loss`: Total encoder loss
+ - `Recon`: Reconstruction loss for the encoder path
+ - `KL`: KL divergence loss for the VAE component
+- `D_acc`: Discriminator accuracy (percentage of samples correctly classified)
+
+The model periodically saves:
+
+1. Voxel visualizations in the `output/image/` directory
+2. Model checkpoints in the `output/pickle/` directory
+3. Model metrics logging in the `output/log/` directory
+You can then view the training progress with:
+```bash
+# When you run TensorBoard, remember to point it at the log directory (not the specific event file):
+tensorboard --logdir=../output/log/model=Singleview_cube=32_bs=10_g_lr=0.0025_d_lr=0.001_z=norm_bias=False_sl=True
+```
+
+## Troubleshooting Common Issues
+
+### Empty Voxel Visualizations
+
+If your voxel visualizations appear empty during early training:
+
+1. **Lower the visualization threshold**: Edit the `SavePloat_Voxels` function in `utils.py` to use a threshold lower than 0.5.
+
+2. **Check training stability**: High reconstruction losses (> 100,000) may indicate training instability. Try:
+   - Reducing learning rates
+   - Adding gradient clipping
+   - Using a smaller batch size
+   - Enabling bias terms (`bias: true` in config)
+
+### CUDA Out of Memory
+
+If you encounter memory issues:
+- Reduce batch size
+- Reduce model complexity (smaller cube_len)
+- Use a smaller number of views in multi-view mode
+
+
+## Advanced Optimization Tips
+
+For optimal training results:
+
+1. **Learning Rate Schedule**: The model uses MultiStepLR with milestones at 500 and 1000 epochs. Adjust these based on your dataset.
+
+2. **KL Weight Annealing**: Consider implementing KL weight annealing by modifying the loss calculation in `train.py`.
+
+3. **Discriminator Throttling**: The discriminator is only updated when its accuracy falls below `d_thresh` (default 0.8). Lower this value if the generator struggles to learn.
+
+
+## Citation
+```
+@inproceedings{3dvaegan,
+  title={Learning a Probabilistic Latent Space of Object Shapes via 3D Generative-Adversarial Modeling},
+  author={Wu, Jiajun and Zhang, Chengkai and Xue, Tianfan and Freeman, Bill and Tenenbaum, Josh},
+  booktitle={Advances in Neural Information Processing Systems},
+  year={2016}
+}
+```
 ## Notes
 
 - The binvox format stores only binary occupancy information (whether a voxel is filled or not) and does not include color information.

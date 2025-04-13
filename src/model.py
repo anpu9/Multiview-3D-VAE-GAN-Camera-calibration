@@ -1,6 +1,16 @@
+"""
+ * Authors: Yuyang Tian and Arun Mekkad
+ * Date: April 12, 2025
+ * Purpose: Defines the neural network architectures for the 3D-VAE-GAN model.
+            Includes classes for the Generator, Discriminator, and various Encoder
+            variants (single-view and multi-view), with support for different
+            configuration options.
+ TODO: Define posing encoding
+"""
 import torch
 import math
 from utils import var_or_cuda
+torch.autograd.set_detect_anomaly(True)
 
 # Base class for all models with common utilities
 class ModelBase(torch.nn.Module):
@@ -30,7 +40,6 @@ class ModelBase(torch.nn.Module):
         """Calculate output feature map size"""
         out = (((size - kernel_size) + (2 * padding)) // stride) + 1
         return out
-
 
 # Generator: transform a latent vector into a 3D voxel grid representation
 class Generator(ModelBase):
@@ -91,7 +100,6 @@ class Generator(ModelBase):
             out = layer(out)
 
         return out
-
 
 # Discriminator: determine if a voxel grid is real or generated
 class Discriminator(ModelBase):
@@ -154,7 +162,6 @@ class Discriminator(ModelBase):
             out = layer(out)
 
         return out
-
 
 # Base class for all encoder variants
 class EncoderBase(ModelBase):
@@ -234,9 +241,9 @@ class EncoderBase(ModelBase):
     def reparameterize(self, mu, var):
         """Perform the reparameterization trick for VAE"""
         if self.training:
-            std = var.mul(0.5).exp_()
-            eps = var_or_cuda(std.data.new(std.size()).normal_())
-            z = eps.mul(std).add_(mu)
+            std = torch.exp(var * 0.5)  # Convert log variance to standard deviation
+            eps = var_or_cuda(std.data.new(std.size()).normal_())  # Random noise from normal distribution
+            z = eps * std + mu  # Reparameterized sampling
             return z
         else:
             return mu
@@ -244,7 +251,6 @@ class EncoderBase(ModelBase):
     def forward(self, x):
         """To be implemented by subclasses"""
         raise NotImplementedError("Subclasses must implement forward method")
-
 
 # Encoder for the single-view case
 class SingleViewEncoder(EncoderBase):
@@ -254,7 +260,6 @@ class SingleViewEncoder(EncoderBase):
     def forward(self, x):
         """Forward pass for single view encoder"""
         return self.encode_single_image(x)
-
 
 # Encoder for the multi-view case
 class MultiViewEncoder(EncoderBase):
@@ -292,19 +297,3 @@ class MultiViewEncoder(EncoderBase):
             raise NotImplementedError("Concat combination type is not implemented")
         else:
             raise ValueError(f"Unknown combination type: {self.combine_type}")
-
-
-# Factory function to create the appropriate encoder based on args
-def create_encoder(args, multiview=False):
-    """Factory function to create encoders"""
-    if multiview:
-        return MultiViewEncoder(args)
-    else:
-        return SingleViewEncoder(args)
-
-
-# For backward compatibility with existing code
-_G = Generator
-_D = Discriminator
-_E = SingleViewEncoder
-_E_MultiView = MultiViewEncoder
