@@ -1,5 +1,10 @@
-import scipy.ndimage as nd
-import scipy.io as io
+"""
+ * Authors: Yuyang Tian and Arun Mekkad
+ * Date: April 12, 2025
+ * Purpose: Provides utility functions for the 3D-VAE-GAN model, including
+            data loading, tensor manipulation, checkpoint saving/loading,
+            and 3D voxel visualization tools.
+"""
 import matplotlib
 # Force matplotlib to not use any Xwindows backend.
 matplotlib.use('Agg')
@@ -83,9 +88,9 @@ class CO3DDataset(data.Dataset):
         # Get frames information
         frames = metadata["frames"]
 
-        # Handle different viewing modes
+        # Select frames based on viewing mode
         if self.multiview:
-            # Select a subset of frames if we have more than we need
+            # Select multiple frames for multi-view
             if len(frames) > self.num_views:
                 # Evenly sample frames
                 indices = np.linspace(0, len(frames) - 1, self.num_views, dtype=int)
@@ -93,66 +98,56 @@ class CO3DDataset(data.Dataset):
             else:
                 # Use all available frames
                 selected_frames = frames[:self.num_views]
-
-            # Load images and poses
-            images = []
-            poses = [] if self.use_pose else None
-
-            for frame in selected_frames:
-                # Load image
-                img_path = os.path.join(sequence["instance_dir"], frame["image"])
-                img = Image.open(img_path).convert('RGB')
-
-                # Load mask
-                mask_path = os.path.join(sequence["instance_dir"], frame["mask"])
-                mask = Image.open(mask_path).convert('L')  # Load as grayscale
-
-                # Apply mask to image if needed
-                if self.apply_mask:
-                    # Convert mask to numpy array and threshold it
-                    mask_np = np.array(mask) > 128  # Binary mask
-
-                    # Convert image to numpy array
-                    img_np = np.array(img)
-
-                    # Apply mask (set background to a specific color, e.g., black)
-                    for c in range(3):  # For each RGB channel
-                        img_np[:,:,c] = np.where(mask_np, img_np[:,:,c], 0)
-
-                    # Convert back to PIL
-                    img = Image.fromarray(img_np)
-
-                # Apply transformations
-                img_tensor = self.transform(img)
-                images.append(img_tensor)
-
-                # Load pose if needed
-                if self.use_pose:
-                    pose_path = os.path.join(sequence["processed_dir"], frame["pose"])
-                    pose = self.load_pose(pose_path)
-                    poses.append(pose)
-
-            # Return appropriate tuple based on pose usage
-            if self.use_pose:
-                return images, poses, torch.FloatTensor(volume)
-            else:
-                return images, torch.FloatTensor(volume)
         else:
-            # Single view mode - just use the first frame
-            frame = frames[0]
+            # For single-view, just use the first frame
+            selected_frames = [frames[0]]
 
-            # Load image
-            img_path = os.path.join(sequence["processed_dir"], frame["image"])
+        # Process frames
+        images = []
+        poses = [] if self.use_pose else None
+
+        for frame in selected_frames:
+            # Load and process image
+            img_path = os.path.join(sequence["instance_dir"], frame["image"])
             img = Image.open(img_path).convert('RGB')
-            img_tensor = self.transform(img)
 
-            # Return appropriate tuple based on pose usage
+            # Load and apply mask if needed
+            if self.apply_mask:
+                mask_path = os.path.join(sequence["instance_dir"], frame["mask"])
+                mask = Image.open(mask_path).convert('L')
+                mask_np = np.array(mask) > 128
+                img_np = np.array(img)
+
+                # Apply mask
+                for c in range(3):
+                    img_np[:, :, c] = np.where(mask_np, img_np[:, :, c], 0)
+
+                img = Image.fromarray(img_np)
+
+            # Transform and add to list
+            img_tensor = self.transform(img)
+            images.append(img_tensor)
+
+            # Load pose if needed
             if self.use_pose:
                 pose_path = os.path.join(sequence["processed_dir"], frame["pose"])
                 pose = self.load_pose(pose_path)
-                return img_tensor, pose, torch.FloatTensor(volume)
+                poses.append(pose)
+
+        # Return appropriate tuple based on configuration
+        volume_tensor = torch.FloatTensor(volume)
+
+        if self.multiview:
+            if self.use_pose:
+                return images, poses, volume_tensor
             else:
-                return img_tensor, torch.FloatTensor(volume)
+                return images, volume_tensor
+        else:
+            # Single view - return first image/pose directly rather than in a list
+            if self.use_pose:
+                return images[0], poses[0], volume_tensor
+            else:
+                return images[0], volume_tensor
 
     def load_pose(self, pose_path):
         """Load camera pose from JSON file"""
@@ -191,6 +186,13 @@ def plotFromVoxels(voxels):
 
 
 def SavePloat_Voxels(voxels, path, iteration):
+    print(f"Voxels shape: {voxels.shape}")  # Add this line to debug\
+    # Ensure we have the right format
+    if len(voxels.shape) == 5:  # (batch, channels, depth, height, width)
+        # Remove channel dimension if it's 1
+        if voxels.shape[1] == 1:
+            voxels = voxels.squeeze(1)  # Now shape (batch, depth, height, width)
+
     voxels = voxels[:8].__ge__(0.5)
     fig = plt.figure(figsize=(32, 16))
     gs = gridspec.GridSpec(2, 4)
@@ -224,7 +226,6 @@ def var_or_cuda(x):
     return x
 
 def generateZ(args):
-
     if args.z_dis == "norm":
         Z = var_or_cuda(torch.Tensor(args.batch_size, args.z_size).normal_(0, 0.33))
     elif args.z_dis == "uni":
@@ -262,7 +263,6 @@ def read_pickle(path, G, G_solver, D_, D_solver,E_=None,E_solver = None ):
 
 
     except Exception as e:
-
         print("fail try read_pickle", e)
 
 
